@@ -94,20 +94,27 @@ def show_settings_page():
                         "/api/users/me/linkedin-credentials",
                         data={"email": li_email, "password": li_password},
                     )
-                    if save_resp and save_resp.status_code == 200:
+                    if save_resp is not None and save_resp.status_code == 200:
                         st.success("LinkedIn credentials saved and encrypted!")
                         st.rerun()
                     else:
-                        err = save_resp.json() if save_resp else {}
-                        st.error(f"Failed to save: {err.get('detail', 'Unknown error')}")
+                        try:
+                            err = save_resp.json() if save_resp is not None else {}
+                        except Exception:
+                            err = {}
+                        st.error(f"Failed to save: {err.get('detail', save_resp.text if save_resp is not None else 'No response from server')}")
         with col_clear:
             if st.button("🗑️ Clear Credentials"):
                 del_resp = api_client.delete("/api/users/me/linkedin-credentials")
-                if del_resp and del_resp.status_code == 200:
+                if del_resp is not None and del_resp.status_code == 200:
                     st.success("LinkedIn credentials removed.")
                     st.rerun()
                 else:
-                    st.error("Failed to clear credentials.")
+                    try:
+                        err = del_resp.json() if del_resp is not None else {}
+                    except Exception:
+                        err = {}
+                    st.error(f"Failed to clear credentials: {err.get('detail', del_resp.text if del_resp is not None else 'No response from server')}")
 
     with st.expander("🤖 Agent Settings"):
         st.number_input("Max applications per run", value=10, min_value=1, max_value=50)
