@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: devapply
+      POSTGRES_USER: devapply_user
+      POSTGRES_PASSWORD: secure_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    command: serve
+
+  fastapi:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    environment:
+      DATABASE_URL: postgresql://devapply_user:secure_password@postgres:5432/devapply
+      REDIS_URL: redis://redis:6379
+      OLLAMA_API_URL: http://ollama:11434
+      JWT_SECRET_KEY: docker_secret_key
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+      - ollama
+
+  streamlit:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    environment:
+      BACKEND_API_URL: http://fastapi:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      - fastapi
+
+volumes:
+  postgres_data:
+  ollama_data:

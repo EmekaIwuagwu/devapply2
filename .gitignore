@@ -1,0 +1,16 @@
+venv/
+__pycache__/
+*.pyc
+.env
+uploads/
+logs/
+.pytest_cache/
+.DS_Store
+*.db
+.idea/
+.vscode/
+playwright_browsers/
+celery_broker.db
+celery_broker.db-journal
+test_celery_broker.db
+storage/

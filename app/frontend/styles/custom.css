@@ -1,0 +1,104 @@
+/* Modern DevApply Premium Theme */
+
+:root {
+    --primary-color: #6C5CE7;
+    --secondary-color: #A29BFE;
+    --background-dark: #0F0F1A;
+    --card-bg: rgba(255, 255, 255, 0.05);
+    --text-main: #FFFFFF;
+    --text-muted: #B2BEC3;
+    --accent-glow: 0 0 20px rgba(108, 92, 231, 0.3);
+}
+
+/* Glassmorphism for Sidebar */
+[data-testid="stSidebar"] {
+    background-color: #161625 !important;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+[data-testid="stSidebar"] * {
+    color: #FFFFFF !important;
+}
+
+/* Hide default page navigation if visible */
+[data-testid="stSidebarNav"] {
+    display: none !important;
+}
+
+/* Page Link Styling in Sidebar */
+[data-testid="stSidebar"] a {
+    text-decoration: none;
+    padding: 10px;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    display: block;
+    margin-bottom: 5px;
+}
+
+[data-testid="stSidebar"] a:hover {
+    background: rgba(108, 92, 231, 0.2);
+    border-left: 4px solid var(--primary-color);
+}
+
+/* Custom Card Styling */
+.stCard {
+    background: var(--card-bg);
+    backdrop-filter: blur(10px);
+    border-radius: 15px;
+    padding: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: var(--accent-glow);
+    transition: transform 0.3s ease;
+}
+
+.stCard:hover {
+    transform: translateY(-5px);
+}
+
+/* Global Styles */
+.main {
+    background-color: var(--background-dark);
+    color: var(--text-main);
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+}
+
+h1, h2, h3 {
+    background: linear-gradient(135deg, #6C5CE7 0%, #A29BFE 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 800;
+}
+
+/* Custom Button Styling */
+.stButton>button {
+    background: linear-gradient(135deg, #6C5CE7 0%, #8E44AD 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 24px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    width: 100%;
+}
+
+.stButton>button:hover {
+    box-shadow: 0 0 15px rgba(108, 92, 231, 0.5);
+    transform: scale(1.02);
+}
+
+/* Metric Boxes */
+div[data-testid="stMetricValue"] {
+    font-size: 2.5rem !important;
+    font-weight: 900 !important;
+    color: var(--secondary-color) !important;
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.stApp {
+    animation: fadeIn 0.8s ease-out;
+}
