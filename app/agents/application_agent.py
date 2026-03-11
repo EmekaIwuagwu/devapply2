@@ -315,171 +315,191 @@ class ApplicationAgent:
         user_info = self._build_user_info(user_profile)
         result = {"success": False, "status": "unknown", "screenshot": None, "error": None}
 
-        async with async_playwright() as p:
-            try:
-                # ── Launch browser (stealth mode) ─────────────────────────
-                browser = await p.chromium.launch(
-                    headless=headless,
-                    args=[
-                        "--no-sandbox",
-                        "--disable-blink-features=AutomationControlled",
-                        "--disable-infobars",
-                    ],
-                )
-                context = await browser.new_context(
-                    viewport={"width": 1920, "height": 1080},
-                    user_agent=(
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/122.0.0.0 Safari/537.36"
-                    ),
-                    extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
-                )
-                # Remove webdriver fingerprint
-                await context.add_init_script(
-                    "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-                )
-                page = await context.new_page()
+        # ── Outer try wraps the entire Playwright context startup ──────────
+        # async_playwright().__aenter__() itself can raise NotImplementedError
+        # (asyncio child-watcher not attached, subprocess unsupported, or
+        # browser binary missing) — this must be caught OUTSIDE the inner try.
+        try:
+            async with async_playwright() as p:
+                try:
+                    # ── Launch browser (stealth mode) ─────────────────────────
+                    browser = await p.chromium.launch(
+                        headless=headless,
+                        args=[
+                            "--no-sandbox",
+                            "--disable-blink-features=AutomationControlled",
+                            "--disable-infobars",
+                        ],
+                    )
+                    context = await browser.new_context(
+                        viewport={"width": 1920, "height": 1080},
+                        user_agent=(
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/122.0.0.0 Safari/537.36"
+                        ),
+                        extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
+                    )
+                    # Remove webdriver fingerprint
+                    await context.add_init_script(
+                        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+                    )
+                    page = await context.new_page()
 
-                # ── STEP 1: Navigate ───────────────────────────────────────
-                logger.info(f"   [1/9] Navigating to job page...")
-                await page.goto(job_url, wait_until="domcontentloaded", timeout=30000)
-                await self.human.random_delay(1000, 2500)
-                ss1 = await self.screenshots.capture(page, "1_job_page")
-                result["screenshot"] = ss1
+                    # ── STEP 1: Navigate ───────────────────────────────────────
+                    logger.info(f"   [1/9] Navigating to job page...")
+                    await page.goto(job_url, wait_until="domcontentloaded", timeout=30000)
+                    await self.human.random_delay(1000, 2500)
+                    ss1 = await self.screenshots.capture(page, "1_job_page")
+                    result["screenshot"] = ss1
 
-                # ── STEP 2: Find Apply button ─────────────────────────────
-                logger.info(f"   [2/9] Locating 'Apply' button...")
-                apply_selector = await self.dom.find_apply_button(page)
+                    # ── STEP 2: Find Apply button ─────────────────────────────
+                    logger.info(f"   [2/9] Locating 'Apply' button...")
+                    apply_selector = await self.dom.find_apply_button(page)
 
-                if not apply_selector:
-                    # Try LinkedIn Easy Apply
+                    if not apply_selector:
+                        # Try LinkedIn Easy Apply
+                        try:
+                            count = await page.locator('.jobs-apply-button').count()
+                            if count > 0:
+                                apply_selector = '.jobs-apply-button'
+                        except Exception:
+                            pass
+
+                    if not apply_selector:
+                        logger.info(f"   ⚠️  No Apply button found — this job may require external application")
+                        result["status"] = "no_apply_button"
+                        result["error"] = "Apply button not found on page"
+                        await browser.close()
+                        return result
+
+                    logger.info(f"   ✅ Apply button found: {apply_selector}")
+
+                    # ── STEP 3: Click Apply ───────────────────────────────────
+                    logger.info(f"   [3/9] Clicking Apply button...")
+                    await self.human.human_click(page, apply_selector)
+                    await self.human.random_delay(1500, 3000)
+                    ss2 = await self.screenshots.capture(page, "2_after_apply_click")
+
+                    # ── STEP 4: Detect form fields ────────────────────────────
+                    logger.info(f"   [4/9] Analyzing form structure...")
+                    form_fields = await self.dom.get_form_fields(page)
+                    logger.info(f"   ✅ {len(form_fields)} form fields detected")
+
+                    # ── STEP 5: Fill form ─────────────────────────────────────
+                    logger.info(f"   [5/9] Filling form fields...")
+                    filled_count = 0
+                    for field in form_fields:
+                        profile_key = self.dom.match_field_to_profile(
+                            field.get("label", ""),
+                            field.get("placeholder", ""),
+                            field.get("name", ""),
+                        )
+                        if not profile_key:
+                            continue
+                        value = user_info.get(profile_key, "")
+                        if not value:
+                            continue
+                        selector = field.get("selector")
+                        if not selector:
+                            continue
+                        try:
+                            await self.human.human_type(page, selector, value)
+                            logger.info(f"   ✓ {field.get('label','?')} → '{value[:30]}'")
+                            filled_count += 1
+                        except Exception as e:
+                            logger.debug(f"   · Could not fill {selector}: {e}")
+
+                    logger.info(f"   ✅ Filled {filled_count} fields")
+
+                    # ── STEP 6: Upload resume ─────────────────────────────────
+                    if resume_path and os.path.exists(resume_path):
+                        logger.info(f"   [6/9] Uploading resume: {resume_path}")
+                        has_file_input = await self.dom.find_file_input(page)
+                        if has_file_input:
+                            try:
+                                await page.set_input_files('input[type="file"]', resume_path)
+                                await self.human.random_delay(1000, 2000)
+                                logger.info(f"   ✅ Resume uploaded")
+                            except Exception as e:
+                                logger.warning(f"   ⚠️  Resume upload failed: {e}")
+                        else:
+                            logger.info(f"   ⚪ No file input found on form")
+                    else:
+                        logger.info(f"   [6/9] No resume path provided — skipping upload")
+
+                    ss3 = await self.screenshots.capture(page, "3_form_filled")
+
+                    # ── STEP 7: Find submit button ────────────────────────────
+                    logger.info(f"   [7/9] Locating Submit button...")
+                    submit_selector = await self.dom.find_submit_button(page)
+                    if not submit_selector:
+                        logger.info(f"   ⚠️  Submit button not found automatically")
+                        result["status"] = "no_submit_button"
+                        result["error"] = "Could not find submit button"
+                        await browser.close()
+                        return result
+
+                    logger.info(f"   ✅ Submit button: {submit_selector}")
+
+                    # ── STEP 8: Submit ────────────────────────────────────────
+                    logger.info(f"   [8/9] Submitting application...")
+                    await self.human.human_click(page, submit_selector)
+                    await self.human.random_delay(2000, 4000)
+                    ss4 = await self.screenshots.capture(page, "4_after_submit")
+
+                    # ── STEP 9: Verify success ────────────────────────────────
+                    logger.info(f"   [9/9] Verifying submission...")
+                    page_text = await page.inner_text("body")
+
+                    # Try OCR as well if text extraction fails
+                    ocr_text = ""
+                    if hasattr(ss4, '__str__'):
+                        ocr_text = self.screenshots.ocr_read(ss4)
+
+                    combined = (page_text + " " + ocr_text).lower()
+                    is_success = any(kw in combined for kw in SUCCESS_KEYWORDS)
+
+                    if is_success:
+                        logger.info(f"   🎉 SUCCESS — Application submitted to '{company}'!")
+                        result["success"] = True
+                        result["status"] = "submitted"
+                        result["screenshot"] = ss4
+                    else:
+                        logger.warning(f"   ⚠️  Could not confirm success — manual review recommended")
+                        result["success"] = False
+                        result["status"] = "unverified"
+                        result["screenshot"] = ss4
+                        result["error"] = "Could not verify submission success"
+
+                    await browser.close()
+                    return result
+
+                except Exception as e:
+                    logger.error(f"Application agent error for '{job_title}': {e}")
+                    result["success"] = False
+                    result["status"] = "error"
+                    result["error"] = str(e)[:200]
                     try:
-                        count = await page.locator('.jobs-apply-button').count()
-                        if count > 0:
-                            apply_selector = '.jobs-apply-button'
+                        await browser.close()
                     except Exception:
                         pass
-
-                if not apply_selector:
-                    logger.info(f"   ⚠️  No Apply button found — this job may require external application")
-                    result["status"] = "no_apply_button"
-                    result["error"] = "Apply button not found on page"
-                    await browser.close()
                     return result
 
-                logger.info(f"   ✅ Apply button found: {apply_selector}")
+        except Exception as e:
+            # Catches failures from async_playwright().__aenter__() itself:
+            # – NotImplementedError: asyncio subprocess not supported on this loop
+            # – Error: browser binary not installed (run: playwright install chromium)
+            # – Any other startup-level failure
+            err_name = type(e).__name__
+            err_detail = str(e) or "Failed to start browser. Run: playwright install chromium"
+            logger.error(f"Playwright startup failed for '{job_title}': {err_name}: {err_detail}")
+            result["success"] = False
+            result["status"] = "playwright_startup_error"
+            result["error"] = f"{err_name}: {err_detail}"
+            return result
 
-                # ── STEP 3: Click Apply ───────────────────────────────────
-                logger.info(f"   [3/9] Clicking Apply button...")
-                await self.human.human_click(page, apply_selector)
-                await self.human.random_delay(1500, 3000)
-                ss2 = await self.screenshots.capture(page, "2_after_apply_click")
-
-                # ── STEP 4: Detect form fields ────────────────────────────
-                logger.info(f"   [4/9] Analyzing form structure...")
-                form_fields = await self.dom.get_form_fields(page)
-                logger.info(f"   ✅ {len(form_fields)} form fields detected")
-
-                # ── STEP 5: Fill form ─────────────────────────────────────
-                logger.info(f"   [5/9] Filling form fields...")
-                filled_count = 0
-                for field in form_fields:
-                    profile_key = self.dom.match_field_to_profile(
-                        field.get("label", ""),
-                        field.get("placeholder", ""),
-                        field.get("name", ""),
-                    )
-                    if not profile_key:
-                        continue
-                    value = user_info.get(profile_key, "")
-                    if not value:
-                        continue
-                    selector = field.get("selector")
-                    if not selector:
-                        continue
-                    try:
-                        await self.human.human_type(page, selector, value)
-                        logger.info(f"   ✓ {field.get('label','?')} → '{value[:30]}'")
-                        filled_count += 1
-                    except Exception as e:
-                        logger.debug(f"   · Could not fill {selector}: {e}")
-
-                logger.info(f"   ✅ Filled {filled_count} fields")
-
-                # ── STEP 6: Upload resume ─────────────────────────────────
-                if resume_path and os.path.exists(resume_path):
-                    logger.info(f"   [6/9] Uploading resume: {resume_path}")
-                    has_file_input = await self.dom.find_file_input(page)
-                    if has_file_input:
-                        try:
-                            await page.set_input_files('input[type="file"]', resume_path)
-                            await self.human.random_delay(1000, 2000)
-                            logger.info(f"   ✅ Resume uploaded")
-                        except Exception as e:
-                            logger.warning(f"   ⚠️  Resume upload failed: {e}")
-                    else:
-                        logger.info(f"   ⚪ No file input found on form")
-                else:
-                    logger.info(f"   [6/9] No resume path provided — skipping upload")
-
-                ss3 = await self.screenshots.capture(page, "3_form_filled")
-
-                # ── STEP 7: Find submit button ────────────────────────────
-                logger.info(f"   [7/9] Locating Submit button...")
-                submit_selector = await self.dom.find_submit_button(page)
-                if not submit_selector:
-                    logger.info(f"   ⚠️  Submit button not found automatically")
-                    result["status"] = "no_submit_button"
-                    result["error"] = "Could not find submit button"
-                    await browser.close()
-                    return result
-
-                logger.info(f"   ✅ Submit button: {submit_selector}")
-
-                # ── STEP 8: Submit ────────────────────────────────────────
-                logger.info(f"   [8/9] Submitting application...")
-                await self.human.human_click(page, submit_selector)
-                await self.human.random_delay(2000, 4000)
-                ss4 = await self.screenshots.capture(page, "4_after_submit")
-
-                # ── STEP 9: Verify success ────────────────────────────────
-                logger.info(f"   [9/9] Verifying submission...")
-                page_text = await page.inner_text("body")
-
-                # Try OCR as well if text extraction fails
-                ocr_text = ""
-                if hasattr(ss4, '__str__'):
-                    ocr_text = self.screenshots.ocr_read(ss4)
-
-                combined = (page_text + " " + ocr_text).lower()
-                is_success = any(kw in combined for kw in SUCCESS_KEYWORDS)
-
-                if is_success:
-                    logger.info(f"   🎉 SUCCESS — Application submitted to '{company}'!")
-                    result["success"] = True
-                    result["status"] = "submitted"
-                    result["screenshot"] = ss4
-                else:
-                    logger.warning(f"   ⚠️  Could not confirm success — manual review recommended")
-                    result["success"] = False
-                    result["status"] = "unverified"
-                    result["screenshot"] = ss4
-                    result["error"] = "Could not verify submission success"
-
-                await browser.close()
-                return result
-
-            except Exception as e:
-                logger.error(f"Application agent error for '{job_title}': {e}")
-                result["success"] = False
-                result["status"] = "error"
-                result["error"] = str(e)[:200]
-                try:
-                    await browser.close()
-                except Exception:
-                    pass
-                return result
+        return result  # defensive fallback
 
 
 async def run_application_batch(

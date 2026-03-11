@@ -39,6 +39,14 @@ async def start_automation_agent(
     current_user: User = Depends(get_current_user),
 ):
     """Start the agent workflow as a background task."""
+    # ── Guard: prevent concurrent runs ────────────────────────────────────
+    current_status = agent_log_store.get_status()
+    if current_status.get("is_running"):
+        raise HTTPException(
+            status_code=409,
+            detail="A workflow is already running. Wait for it to finish or stop it first."
+        )
+
     strategy = await db.get(Strategy, strategy_id)
     if not strategy:
         raise HTTPException(status_code=404, detail="Strategy not found")
@@ -55,13 +63,22 @@ async def start_automation_agent(
         "target_job_titles": strategy.target_job_titles or [],
         "location_preference": strategy.location_preference,
         "job_types": strategy.job_types,
+        "max_applications_per_run": getattr(strategy, "max_applications_per_run", 5) or 5,
     }
 
+    # Build the full user profile so form-filling has all available data
     user_profile = {
         "user_id": str(current_user.id),
-        "email": current_user.email,
-        "first_name": getattr(current_user, "first_name", ""),
-        "skills": getattr(current_user, "skills", ""),
+        "email": current_user.email or "",
+        "first_name": getattr(current_user, "first_name", "") or "",
+        "last_name": getattr(current_user, "last_name", "") or "",
+        "phone": getattr(current_user, "phone", "") or "",
+        "profile_bio": getattr(current_user, "profile_bio", "") or "",
+        "linkedin_url": getattr(current_user, "linkedin_url", "") or "",
+        "github_url": getattr(current_user, "github_url", "") or "",
+        "portfolio_url": getattr(current_user, "portfolio_url", "") or "",
+        # skills comes from the strategy's required_skills list (joined as CSV)
+        "skills": ", ".join(strategy.required_skills or []),
     }
 
     # Clear old logs and update state
