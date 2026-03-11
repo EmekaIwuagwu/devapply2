@@ -22,3 +22,7 @@ class User(Base):
     last_login = Column(DateTime(timezone=True))
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
+
+    # LinkedIn Easy Apply credentials (password is Fernet-encrypted at rest)
+    linkedin_email = Column(String(255), nullable=True)
+    linkedin_password_encrypted = Column(Text, nullable=True)

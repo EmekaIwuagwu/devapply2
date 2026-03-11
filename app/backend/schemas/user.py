@@ -33,6 +33,18 @@ class UserResponse(UserBase):
         from_attributes = True
 
 
+class LinkedInCredentialsIn(BaseModel):
+    """Payload for saving LinkedIn Easy Apply credentials."""
+    email: str
+    password: str
+
+
+class LinkedInCredentialsStatus(BaseModel):
+    """What the API returns — never exposes the raw password."""
+    linkedin_email: Optional[str] = None
+    has_password: bool = False
+
+
 class Token(BaseModel):
     access_token: str
     token_type: str

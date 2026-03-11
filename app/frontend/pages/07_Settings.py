@@ -56,6 +56,59 @@ def show_settings_page():
             else:
                 st.error("User context missing.")
 
+    with st.expander("🔑 LinkedIn Easy Apply Credentials"):
+        st.markdown(
+            "Store your LinkedIn credentials so the agent can log in and submit Easy Apply "
+            "applications on your behalf. Your password is **encrypted at rest** and never "
+            "exposed through the API."
+        )
+
+        # Fetch current status
+        cred_resp = api_client.get("/api/users/me/linkedin-credentials/status")
+        cred_status = cred_resp.json() if cred_resp and cred_resp.status_code == 200 else {}
+        stored_email = cred_status.get("linkedin_email") or ""
+        has_password = cred_status.get("has_password", False)
+
+        if stored_email or has_password:
+            st.info(
+                f"✅ Credentials saved — Email: **{stored_email or '(not set)'}** | "
+                f"Password: {'✔ stored' if has_password else '✘ not set'}"
+            )
+        else:
+            st.warning("No LinkedIn credentials saved yet.")
+
+        li_email = st.text_input(
+            "LinkedIn Email", value=stored_email, placeholder="you@example.com", key="li_email"
+        )
+        li_password = st.text_input(
+            "LinkedIn Password", type="password", placeholder="Enter password", key="li_password"
+        )
+
+        col_save, col_clear = st.columns([1, 1])
+        with col_save:
+            if st.button("💾 Save Credentials"):
+                if not li_email or not li_password:
+                    st.error("Both email and password are required.")
+                else:
+                    save_resp = api_client.post(
+                        "/api/users/me/linkedin-credentials",
+                        data={"email": li_email, "password": li_password},
+                    )
+                    if save_resp and save_resp.status_code == 200:
+                        st.success("LinkedIn credentials saved and encrypted!")
+                        st.rerun()
+                    else:
+                        err = save_resp.json() if save_resp else {}
+                        st.error(f"Failed to save: {err.get('detail', 'Unknown error')}")
+        with col_clear:
+            if st.button("🗑️ Clear Credentials"):
+                del_resp = api_client.delete("/api/users/me/linkedin-credentials")
+                if del_resp and del_resp.status_code == 200:
+                    st.success("LinkedIn credentials removed.")
+                    st.rerun()
+                else:
+                    st.error("Failed to clear credentials.")
+
     with st.expander("🤖 Agent Settings"):
         st.number_input("Max applications per run", value=10, min_value=1, max_value=50)
         st.checkbox("Enable Stealth Mode", value=True)

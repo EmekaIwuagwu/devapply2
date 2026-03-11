@@ -34,6 +34,24 @@ class APIClient:
             st.error(f"API Error: {e}")
             return None
 
+    def put(self, endpoint, data=None):
+        url = f"{self.base_url}{endpoint}"
+        try:
+            response = requests.put(url, json=data, headers=self._get_headers())
+            return response
+        except requests.exceptions.RequestException as e:
+            st.error(f"API Error: {e}")
+            return None
+
+    def delete(self, endpoint):
+        url = f"{self.base_url}{endpoint}"
+        try:
+            response = requests.delete(url, headers=self._get_headers())
+            return response
+        except requests.exceptions.RequestException as e:
+            st.error(f"API Error: {e}")
+            return None
+
     def login(self, username, password):
         url = f"{self.base_url}/api/auth/login"
         data = {"username": username, "password": password}
