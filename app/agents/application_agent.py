@@ -305,6 +305,39 @@ class ApplicationAgent:
         self.dom = DomFormAnalyzer()
         self.screenshots = ScreenshotManager()
 
+    async def _linkedin_login(self, page, email: str, password: str) -> bool:
+        """
+        Attempt to log in to LinkedIn using stored credentials.
+        Returns True if login succeeded (redirected away from auth pages).
+        """
+        try:
+            logger.info("   🔐 Attempting LinkedIn login...")
+            await page.goto("https://www.linkedin.com/login", wait_until="domcontentloaded", timeout=30000)
+            await self.human.random_delay(800, 1500)
+
+            # Fill email
+            await self.human.human_type(page, '#username', email)
+            await self.human.random_delay(400, 800)
+
+            # Fill password
+            await self.human.human_type(page, '#password', password)
+            await self.human.random_delay(400, 900)
+
+            # Click Sign In button
+            await self.human.human_click(page, 'button[type="submit"]')
+            await self.human.random_delay(2500, 4000)
+
+            current_url = page.url
+            if self.dom.is_auth_wall(current_url):
+                logger.warning(f"   ❌ LinkedIn login failed — still on auth page: {current_url[:80]}")
+                return False
+
+            logger.info(f"   ✅ LinkedIn login succeeded — at: {current_url[:80]}")
+            return True
+        except Exception as e:
+            logger.warning(f"   ❌ LinkedIn login error: {e}")
+            return False
+
     def _build_user_info(self, user_profile: Dict) -> Dict:
         """Build the complete user info dict for form filling."""
         first = user_profile.get("first_name", "")
@@ -429,18 +462,64 @@ class ApplicationAgent:
                     # waste minutes filling a sign-in form that has no Submit button.
                     current_url = page.url
                     if self.dom.is_auth_wall(current_url):
-                        logger.warning(
-                            f"   🔒 Auth wall detected after clicking Apply "
-                            f"(redirected to: {current_url[:80]}). "
-                            "LinkedIn credentials required — queuing job."
-                        )
-                        result["status"] = "auth_required"
-                        result["error"] = (
-                            f"Login wall detected at {current_url[:120]}. "
-                            "Add LinkedIn credentials to .env to enable Easy Apply."
-                        )
-                        await browser.close()
-                        return result
+                        li_email = user_profile.get("linkedin_email", "")
+                        li_pass = user_profile.get("linkedin_password", "")
+                        if li_email and li_pass:
+                            logger.info(
+                                f"   🔒 Auth wall detected — attempting login with stored credentials..."
+                            )
+                            login_ok = await self._linkedin_login(page, li_email, li_pass)
+                            if login_ok:
+                                # Return to the job URL and retry Apply click
+                                logger.info(f"   ↩  Returning to job page after login: {job_url}")
+                                await page.goto(job_url, wait_until="domcontentloaded", timeout=30000)
+                                await self.human.random_delay(1200, 2500)
+                                apply_selector = await self.dom.find_apply_button(page)
+                                if not apply_selector:
+                                    try:
+                                        c = await page.locator('.jobs-apply-button').count()
+                                        if c > 0:
+                                            apply_selector = '.jobs-apply-button'
+                                    except Exception:
+                                        pass
+                                if apply_selector:
+                                    await self.human.human_click(page, apply_selector)
+                                    await self.human.random_delay(1500, 3000)
+                                    # Re-check for auth wall after retry
+                                    if self.dom.is_auth_wall(page.url):
+                                        result["status"] = "auth_required"
+                                        result["error"] = (
+                                            "Login succeeded but Apply still shows auth wall. "
+                                            "Manual review needed."
+                                        )
+                                        await browser.close()
+                                        return result
+                                else:
+                                    result["status"] = "no_apply_button"
+                                    result["error"] = "Apply button not found after login"
+                                    await browser.close()
+                                    return result
+                            else:
+                                result["status"] = "auth_failed"
+                                result["error"] = (
+                                    "LinkedIn login failed with stored credentials. "
+                                    "Please update your credentials in Settings."
+                                )
+                                await browser.close()
+                                return result
+                        else:
+                            logger.warning(
+                                f"   🔒 Auth wall detected after clicking Apply "
+                                f"(redirected to: {current_url[:80]}). "
+                                "No LinkedIn credentials stored — queuing job."
+                            )
+                            result["status"] = "auth_required"
+                            result["error"] = (
+                                f"Login wall detected at {current_url[:120]}. "
+                                "Save LinkedIn credentials in Settings → LinkedIn Easy Apply Credentials."
+                            )
+                            await browser.close()
+                            return result
 
                     # ── STEP 4: Detect form fields ────────────────────────────
                     logger.info(f"   [4/9] Analyzing form structure...")
@@ -510,7 +589,10 @@ class ApplicationAgent:
                             if self.dom.is_auth_wall(page.url):
                                 logger.warning(f"   🔒 Auth wall on step {_step + 1} — queuing.")
                                 result["status"] = "auth_required"
-                                result["error"] = f"Auth wall at step {_step + 1}: {page.url[:80]}"
+                                result["error"] = (
+                                    f"Auth wall at step {_step + 1}: {page.url[:80]}. "
+                                    "Save LinkedIn credentials in Settings."
+                                )
                                 await browser.close()
                                 return result
                             submit_selector = await self.dom.find_submit_button(page)

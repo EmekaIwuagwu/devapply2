@@ -66,6 +66,12 @@ async def start_automation_agent(
         "max_applications_per_run": getattr(strategy, "max_applications_per_run", 5) or 5,
     }
 
+    # Decrypt LinkedIn credentials if stored
+    from app.backend.services.credential_service import safe_decrypt
+    linkedin_password = ""
+    if getattr(current_user, "linkedin_password_encrypted", None):
+        linkedin_password = safe_decrypt(current_user.linkedin_password_encrypted)
+
     # Build the full user profile so form-filling has all available data
     user_profile = {
         "user_id": str(current_user.id),
@@ -79,6 +85,9 @@ async def start_automation_agent(
         "portfolio_url": getattr(current_user, "portfolio_url", "") or "",
         # skills comes from the strategy's required_skills list (joined as CSV)
         "skills": ", ".join(strategy.required_skills or []),
+        # LinkedIn Easy Apply credentials (password already decrypted in memory)
+        "linkedin_email": getattr(current_user, "linkedin_email", "") or "",
+        "linkedin_password": linkedin_password,
     }
 
     # Clear old logs and update state

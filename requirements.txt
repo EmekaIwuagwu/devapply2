@@ -34,6 +34,9 @@ pytesseract==0.3.10
 pillow==10.1.0
 numpy==1.26.2
 
+# Encryption (for LinkedIn credential storage)
+cryptography>=41.0.0
+
 # Utilities
 requests==2.31.0
 pydantic==2.5.1
