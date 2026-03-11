@@ -88,8 +88,15 @@ async def _get_resume_path(user_profile: Dict) -> Optional[str]:
                 .order_by(Resume.is_primary.desc(), Resume.upload_date.desc())
             )
             resume = result.scalars().first()
-            if resume and resume.file_path and os.path.exists(resume.file_path):
-                return resume.file_path
+            if resume and resume.file_path:
+                # Normalize path separators: DB may store Windows backslashes
+                normalized = resume.file_path.replace("\\", os.sep)
+                if os.path.exists(normalized):
+                    return normalized
+                # Also try with forward slashes regardless of OS
+                forward = resume.file_path.replace("\\", "/")
+                if os.path.exists(forward):
+                    return forward
     except Exception as e:
         logger.warning(f"Resume DB lookup failed: {e}")
     return None

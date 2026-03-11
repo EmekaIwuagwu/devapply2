@@ -32,9 +32,21 @@ logger = logging.getLogger(__name__)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 APPLY_KEYWORDS = ["apply now", "apply", "easy apply", "quick apply", "apply for job"]
-SUBMIT_KEYWORDS = ["submit", "submit application", "send", "send application", "complete"]
+SUBMIT_KEYWORDS = ["submit application", "submit your application", "submit", "send application",
+                   "send", "complete application", "complete", "finish application"]
+# "Next" / "Continue" patterns used by multi-step application forms
+NEXT_STEP_KEYWORDS = ["next", "continue", "proceed", "next step", "save and continue",
+                      "save & continue", "next page"]
 SUCCESS_KEYWORDS = ["thank you", "thanks", "submitted", "success", "application received",
                     "we received", "confirmation", "applied", "application sent"]
+
+# URL fragments that indicate a login / auth wall (not an application form)
+AUTH_WALL_PATTERNS = [
+    "linkedin.com/login", "linkedin.com/uas/login", "linkedin.com/checkpoint",
+    "linkedin.com/authwall", "linkedin.com/signup",
+    "accounts.google.com", "login.microsoftonline.com",
+    "auth.", "/login", "/signin", "/sign-in", "/account/login",
+]
 
 FIELD_MAP = {
     # field_label_keywords → user_profile_key
@@ -194,12 +206,18 @@ class DomFormAnalyzer:
 
     @staticmethod
     async def find_submit_button(page) -> Optional[str]:
-        """Find Submit button."""
+        """Find Submit button using keyword text and type attributes."""
         for keyword in SUBMIT_KEYWORDS:
             for selector_tpl in [
+                # button elements — :has-text() works on elements with child text
                 f'button:has-text("{keyword}")',
-                f'input[type="submit"]:has-text("{keyword}")',
                 f'[role="button"]:has-text("{keyword}")',
+                # input[type="submit"] stores label in value attribute, NOT text content
+                # so :has-text() is invalid here; use the value attribute instead
+                f'input[type="submit"][value="{keyword}"]',
+                f'input[type="submit"][value*="{keyword}"]',
+                # button[type="submit"] with matching text
+                f'button[type="submit"]:has-text("{keyword}")',
             ]:
                 try:
                     count = await page.locator(selector_tpl).count()
@@ -207,14 +225,38 @@ class DomFormAnalyzer:
                         return selector_tpl
                 except Exception:
                     pass
-        # Fallback — any submit input
-        try:
-            c = await page.locator('input[type="submit"]').count()
-            if c > 0:
-                return 'input[type="submit"]'
-        except Exception:
-            pass
+        # Fallback 1 — any submit-typed button (catches custom labels)
+        for fallback in ['button[type="submit"]', 'input[type="submit"]']:
+            try:
+                c = await page.locator(fallback).count()
+                if c > 0:
+                    return fallback
+            except Exception:
+                pass
         return None
+
+    @staticmethod
+    async def find_next_button(page) -> Optional[str]:
+        """Find Next / Continue button used in multi-step application forms."""
+        for keyword in NEXT_STEP_KEYWORDS:
+            for selector_tpl in [
+                f'button:has-text("{keyword}")',
+                f'[role="button"]:has-text("{keyword}")',
+                f'input[type="button"][value="{keyword}"]',
+            ]:
+                try:
+                    count = await page.locator(selector_tpl).count()
+                    if count > 0:
+                        return selector_tpl
+                except Exception:
+                    pass
+        return None
+
+    @staticmethod
+    def is_auth_wall(url: str) -> bool:
+        """Return True if the current URL looks like a login / sign-in wall."""
+        url_lower = url.lower()
+        return any(pat in url_lower for pat in AUTH_WALL_PATTERNS)
 
 
 class ScreenshotManager:
@@ -381,6 +423,25 @@ class ApplicationAgent:
                     await self.human.random_delay(1500, 3000)
                     ss2 = await self.screenshots.capture(page, "2_after_apply_click")
 
+                    # ── Auth-wall guard ────────────────────────────────────────
+                    # LinkedIn and others redirect to a login page when Easy Apply
+                    # is clicked without credentials. Detect this early so we don't
+                    # waste minutes filling a sign-in form that has no Submit button.
+                    current_url = page.url
+                    if self.dom.is_auth_wall(current_url):
+                        logger.warning(
+                            f"   🔒 Auth wall detected after clicking Apply "
+                            f"(redirected to: {current_url[:80]}). "
+                            "LinkedIn credentials required — queuing job."
+                        )
+                        result["status"] = "auth_required"
+                        result["error"] = (
+                            f"Login wall detected at {current_url[:120]}. "
+                            "Add LinkedIn credentials to .env to enable Easy Apply."
+                        )
+                        await browser.close()
+                        return result
+
                     # ── STEP 4: Detect form fields ────────────────────────────
                     logger.info(f"   [4/9] Analyzing form structure...")
                     form_fields = await self.dom.get_form_fields(page)
@@ -430,13 +491,37 @@ class ApplicationAgent:
 
                     ss3 = await self.screenshots.capture(page, "3_form_filled")
 
-                    # ── STEP 7: Find submit button ────────────────────────────
+                    # ── STEP 7: Find submit button (with multi-step fallback) ──
                     logger.info(f"   [7/9] Locating Submit button...")
                     submit_selector = await self.dom.find_submit_button(page)
+
                     if not submit_selector:
-                        logger.info(f"   ⚠️  Submit button not found automatically")
+                        # Multi-step form: look for Next / Continue and click it,
+                        # then re-try finding Submit on the next page (up to 4 steps).
+                        logger.info(f"   ↪  No Submit found — checking for multi-step Next button...")
+                        for _step in range(4):
+                            next_sel = await self.dom.find_next_button(page)
+                            if not next_sel:
+                                break
+                            logger.info(f"   ▶  Step {_step + 1}: clicking '{next_sel}'")
+                            await self.human.human_click(page, next_sel)
+                            await self.human.random_delay(1200, 2500)
+                            # Re-check for auth wall after each step
+                            if self.dom.is_auth_wall(page.url):
+                                logger.warning(f"   🔒 Auth wall on step {_step + 1} — queuing.")
+                                result["status"] = "auth_required"
+                                result["error"] = f"Auth wall at step {_step + 1}: {page.url[:80]}"
+                                await browser.close()
+                                return result
+                            submit_selector = await self.dom.find_submit_button(page)
+                            if submit_selector:
+                                logger.info(f"   ✅ Submit found after {_step + 1} Next step(s)")
+                                break
+
+                    if not submit_selector:
+                        logger.info(f"   ⚠️  Submit button not found — queuing for manual review")
                         result["status"] = "no_submit_button"
-                        result["error"] = "Could not find submit button"
+                        result["error"] = "Could not find submit button (page URL: " + page.url[:100] + ")"
                         await browser.close()
                         return result
 
