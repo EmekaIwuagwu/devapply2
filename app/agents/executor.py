@@ -177,17 +177,39 @@ async def run_agent_workflow(
     await asyncio.sleep(0.3)
 
     skill_words = {s.strip().lower() for s in user_skills.split(",") if s.strip()} if user_skills else set()
+    # Normalise job titles for matching: "Full Stack Engineer" → ["full stack engineer", "full stack", "stack engineer"]
+    _title_keywords = set()
+    for t in job_titles:
+        tl = t.lower()
+        _title_keywords.add(tl)
+        words = tl.split()
+        # also add individual meaningful words (3+ chars) so "Python" matches "Python Developer"
+        _title_keywords.update(w for w in words if len(w) >= 3)
 
     for job in unique_jobs:
-        haystack = f"{job.get('title','')} {job.get('description','')}".lower()
-        score = 55
-        for sk in skill_words:
-            if sk in haystack:
-                score = min(100, score + 8)
-        for t in job_titles:
-            if t.lower() in haystack:
-                score = min(100, score + 12)
-        job["match_score"] = score
+        title_text = job.get("title", "").lower()
+        desc_text = job.get("description", "").lower()
+        haystack = f"{title_text} {desc_text}"
+        score = 40  # lower base so differentiation is meaningful
+
+        # Title relevance — strongest signal (up to +30)
+        title_hits = sum(1 for kw in _title_keywords if kw in title_text)
+        score += min(30, title_hits * 6)
+
+        # Skill match in title or description (up to +20)
+        if skill_words:
+            skill_hits = sum(1 for sk in skill_words if sk in haystack)
+            score += min(20, skill_hits * 5)
+
+        # Platform bonus: non-LinkedIn sources have real descriptions → more signal
+        if job.get("platform") not in ("LinkedIn",):
+            score += 5
+
+        # Recency bonus if we have a posted date
+        if job.get("posted") or job.get("date"):
+            score += 3
+
+        job["match_score"] = min(100, score)
 
     scored = sorted(unique_jobs, key=lambda j: j["match_score"], reverse=True)
     top_jobs = scored[:max_apps]
@@ -227,40 +249,74 @@ async def run_agent_workflow(
     queued = 0
     submitted_jobs = []
 
-    # Check if Playwright Python package is installed AND the Chromium binary
-    # exists.  We do NOT start a browser here — that would start the subprocess
-    # twice.  Any runtime failure during actual submission is caught inside
-    # ApplicationAgent.apply_to_job() and logged as a per-job error rather than
-    # crashing the whole workflow.
+    # Check if Playwright + Chromium binary are available.
+    # Strategy: use playwright's own internal registry first (most reliable),
+    # then fall back to a glob scan of known binary locations.
+    # We do NOT launch a full browser here — ApplicationAgent already handles
+    # launch errors gracefully per-job.
     playwright_available = False
     try:
-        from playwright.async_api import async_playwright  # noqa: F401 — import-only check
+        from playwright.async_api import async_playwright  # noqa: F401
         import glob as _glob, os as _os
 
-        _home = _os.path.expanduser("~")
-        _chrome_patterns = [
-            # Linux full chromium
-            _os.path.join(_home, ".cache", "ms-playwright", "chromium-*", "chrome-linux", "chrome"),
-            # Linux headless shell (newer playwright builds)
-            _os.path.join(_home, ".cache", "ms-playwright", "chromium_headless_shell-*", "chrome-linux", "headless_shell"),
-            # macOS
-            _os.path.join(_home, ".cache", "ms-playwright", "chromium-*", "chrome-mac", "Chromium.app",
-                          "Contents", "MacOS", "Chromium"),
-            # Windows (AppData)
-            _os.path.join(_home, "AppData", "Local", "ms-playwright", "chromium-*", "chrome-win", "chrome.exe"),
-        ]
-        _found = any(_glob.glob(p) for p in _chrome_patterns)
+        _found = False
+
+        # ── Method 1: ask playwright's own registry for the executable path ──
+        try:
+            from playwright._impl._browser_type import BrowserType as _BT  # noqa: F401
+            from playwright.sync_api import sync_playwright as _sp
+            _pw = _sp().start()
+            _exe = _pw.chromium.executable_path
+            _pw.stop()
+            if _exe and _os.path.exists(_exe):
+                _found = True
+        except Exception:
+            pass  # fall through to glob scan
+
+        # ── Method 2: glob scan (covers all known install layouts) ────────────
+        if not _found:
+            _home = _os.path.expanduser("~")
+            # On Windows, ms-playwright lives under AppData\Local
+            _win_base = _os.path.join(_home, "AppData", "Local", "ms-playwright")
+            _lin_base = _os.path.join(_home, ".cache", "ms-playwright")
+            _chrome_patterns = [
+                # Linux — full Chromium
+                _os.path.join(_lin_base, "chromium-*", "chrome-linux", "chrome"),
+                # Linux — headless shell (playwright >= 1.44)
+                _os.path.join(_lin_base, "chromium_headless_shell-*", "chrome-linux", "headless_shell"),
+                # macOS
+                _os.path.join(_lin_base, "chromium-*", "chrome-mac", "Chromium.app",
+                              "Contents", "MacOS", "Chromium"),
+                _os.path.join(_lin_base, "chromium_headless_shell-*", "chrome-mac-*",
+                              "chrome-headless-shell-mac-*", "chrome-headless-shell"),
+                # Windows — full Chromium
+                _os.path.join(_win_base, "chromium-*", "chrome-win", "chrome.exe"),
+                # Windows — headless shell
+                _os.path.join(_win_base, "chromium_headless_shell-*",
+                              "chrome-headless-shell-win64", "chrome-headless-shell.exe"),
+            ]
+            _found = any(_glob.glob(p) for p in _chrome_patterns)
 
         if _found:
             playwright_available = True
             _log("INFO", "   ✅ Playwright + Chromium available — real form submission enabled", task_id)
         else:
             _log("WARN", (
-                "   ⚠️  Playwright Python package found but Chromium binary is missing. "
-                "Run: playwright install chromium — jobs will be queued for manual review."
+                "   ⚠️  Playwright installed but Chromium binary not found. "
+                "Run: python -m playwright install chromium"
             ), task_id)
     except ImportError:
         _log("WARN", "   ⚠️  Playwright not installed — jobs will be queued for manual review", task_id)
+
+    # Warn if all top jobs are LinkedIn but no credentials are stored
+    _li_jobs = [j for j in top_jobs if j.get("platform") == "LinkedIn"]
+    _has_li_creds = bool(user_profile.get("linkedin_email") and user_profile.get("linkedin_password"))
+    if _li_jobs and not _has_li_creds and playwright_available:
+        _log("WARN", (
+            f"   ⚠️  {len(_li_jobs)}/{len(top_jobs)} top jobs are LinkedIn — "
+            "LinkedIn requires login for Easy Apply. "
+            "Add credentials under Settings → LinkedIn Easy Apply Credentials."
+        ), task_id)
 
     if playwright_available:
         from app.agents.application_agent import ApplicationAgent
