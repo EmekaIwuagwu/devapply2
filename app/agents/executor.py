@@ -239,8 +239,11 @@ async def run_agent_workflow(
 
         _home = _os.path.expanduser("~")
         _chrome_patterns = [
-            # Linux / macOS
+            # Linux full chromium
             _os.path.join(_home, ".cache", "ms-playwright", "chromium-*", "chrome-linux", "chrome"),
+            # Linux headless shell (newer playwright builds)
+            _os.path.join(_home, ".cache", "ms-playwright", "chromium_headless_shell-*", "chrome-linux", "headless_shell"),
+            # macOS
             _os.path.join(_home, ".cache", "ms-playwright", "chromium-*", "chrome-mac", "Chromium.app",
                           "Contents", "MacOS", "Chromium"),
             # Windows (AppData)
