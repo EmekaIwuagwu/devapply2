@@ -16,11 +16,18 @@ from app.backend.services import agent_log_store
 router = APIRouter()
 
 
-async def _run_agent_background(user_strategy: dict, user_profile: dict, task_id: str):
+def _run_agent_background(user_strategy: dict, user_profile: dict, task_id: str):
     """Run the agent workflow as a FastAPI background task."""
+    import sys
+    import asyncio
+    
+    # Ensure background thread can use subprocesses on Windows
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        
     try:
         from app.agents.executor import run_agent_workflow
-        await run_agent_workflow(user_strategy, user_profile, task_id=task_id)
+        asyncio.run(run_agent_workflow(user_strategy, user_profile, task_id=task_id))
     except Exception as e:
         import traceback
         err_msg = traceback.format_exc()
