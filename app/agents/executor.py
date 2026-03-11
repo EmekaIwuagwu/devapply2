@@ -88,8 +88,15 @@ async def _get_resume_path(user_profile: Dict) -> Optional[str]:
                 .order_by(Resume.is_primary.desc(), Resume.upload_date.desc())
             )
             resume = result.scalars().first()
-            if resume and resume.file_path and os.path.exists(resume.file_path):
-                return resume.file_path
+            if resume and resume.file_path:
+                # Normalize path separators: DB may store Windows backslashes
+                normalized = resume.file_path.replace("\\", os.sep)
+                if os.path.exists(normalized):
+                    return normalized
+                # Also try with forward slashes regardless of OS
+                forward = resume.file_path.replace("\\", "/")
+                if os.path.exists(forward):
+                    return forward
     except Exception as e:
         logger.warning(f"Resume DB lookup failed: {e}")
     return None
@@ -220,12 +227,35 @@ async def run_agent_workflow(
     queued = 0
     submitted_jobs = []
 
-    # Check if Playwright is available
+    # Check if Playwright Python package is installed AND the Chromium binary
+    # exists.  We do NOT start a browser here — that would start the subprocess
+    # twice.  Any runtime failure during actual submission is caught inside
+    # ApplicationAgent.apply_to_job() and logged as a per-job error rather than
+    # crashing the whole workflow.
     playwright_available = False
     try:
-        from playwright.async_api import async_playwright
-        playwright_available = True
-        _log("INFO", "   ✅ Playwright available — real form submission enabled", task_id)
+        from playwright.async_api import async_playwright  # noqa: F401 — import-only check
+        import glob as _glob, os as _os
+
+        _home = _os.path.expanduser("~")
+        _chrome_patterns = [
+            # Linux / macOS
+            _os.path.join(_home, ".cache", "ms-playwright", "chromium-*", "chrome-linux", "chrome"),
+            _os.path.join(_home, ".cache", "ms-playwright", "chromium-*", "chrome-mac", "Chromium.app",
+                          "Contents", "MacOS", "Chromium"),
+            # Windows (AppData)
+            _os.path.join(_home, "AppData", "Local", "ms-playwright", "chromium-*", "chrome-win", "chrome.exe"),
+        ]
+        _found = any(_glob.glob(p) for p in _chrome_patterns)
+
+        if _found:
+            playwright_available = True
+            _log("INFO", "   ✅ Playwright + Chromium available — real form submission enabled", task_id)
+        else:
+            _log("WARN", (
+                "   ⚠️  Playwright Python package found but Chromium binary is missing. "
+                "Run: playwright install chromium — jobs will be queued for manual review."
+            ), task_id)
     except ImportError:
         _log("WARN", "   ⚠️  Playwright not installed — jobs will be queued for manual review", task_id)
 
