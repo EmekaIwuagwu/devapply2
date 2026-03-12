@@ -1,8 +1,12 @@
+import os
 import requests
 import streamlit as st
 from app.config import settings
 
-BACKEND_URL = "http://localhost:8000"
+# Allow override via env var so the same image works for both:
+#   • same-container deploys  (localhost:8000 — default)
+#   • split-service deploys   (BACKEND_API_URL=https://devapply-api.onrender.com)
+BACKEND_URL = os.getenv("BACKEND_API_URL", "http://localhost:8000").rstrip("/")
 
 
 class APIClient:

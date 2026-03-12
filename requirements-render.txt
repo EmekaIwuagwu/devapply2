@@ -1,0 +1,63 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# DevApply — Render-optimised requirements
+#
+# Removed from full requirements.txt:
+#   torch / transformers / sentence-transformers  — not used in active code,
+#       would make the image ~5 GB and exceed Render free-tier memory
+#   langchain* / crewai / ollama  — not imported in any active code path
+#   pyautogui  — requires an X display; incompatible with headless servers
+#   opencv-python  → replaced by opencv-python-headless (no GUI deps)
+#   celery / redis / python-celery-beat  — pipeline uses FastAPI BackgroundTasks
+#   pytest / black / ruff / mypy  — dev/test tools, not needed at runtime
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Core Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+streamlit==1.28.1
+
+# Database
+sqlalchemy==2.0.23
+alembic==1.12.1
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+
+# Browser Automation
+playwright==1.56.0
+beautifulsoup4==4.12.2
+lxml==4.9.3
+
+# Computer Vision & OCR (headless — no GUI)
+opencv-python-headless==4.8.1.78
+pytesseract==0.3.10
+pillow==10.1.0
+numpy==1.26.2
+
+# Encryption
+cryptography>=41.0.0
+
+# Utilities
+requests==2.31.0
+pydantic==2.5.1
+pydantic-settings==2.1.0
+pyjwt==2.8.1
+bcrypt==4.1.1
+python-dotenv==1.0.0
+fake-useragent==1.4.0
+
+# Resume Processing
+python-docx==0.8.11
+pdfplumber==0.10.3
+pypdf==3.17.1
+reportlab==4.0.7
+
+# Data & Analytics
+pandas==2.1.3
+plotly==5.18.0
+matplotlib==3.8.2
+
+# Logging
+python-json-logger==2.0.7
+
+# HTTP client (used by tests and internal checks)
+httpx==0.25.2

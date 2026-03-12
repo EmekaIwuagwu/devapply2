@@ -1,0 +1,68 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# render.yaml — Render Blueprint
+# Deploys DevApply as a single web service + managed PostgreSQL.
+#
+# Usage:
+#   1. Push this repo to GitHub / GitLab
+#   2. Go to https://dashboard.render.com → New → Blueprint
+#   3. Connect your repo — Render reads this file automatically
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  - type: web
+    name: devapply
+    env: docker
+    # Uses the Dockerfile at the repo root
+    dockerfilePath: ./Dockerfile
+    # starter plan has 512 MB RAM — enough after stripping torch/ML packages
+    plan: starter
+    healthCheckPath: /
+    envVars:
+      # Injected automatically from the managed DB below
+      - key: DATABASE_URL
+        fromDatabase:
+          name: devapply-db
+          property: connectionString
+
+      # Auto-generate a secure random secret on first deploy
+      - key: JWT_SECRET_KEY
+        generateValue: true
+
+      - key: ENVIRONMENT
+        value: production
+
+      - key: DEBUG
+        value: "false"
+
+      # --no-sandbox is required when running Chromium as root in a container
+      - key: BROWSER_LAUNCH_ARGS
+        value: "--no-sandbox,--disable-gpu,--disable-dev-shm-usage"
+
+      - key: USE_HEADLESS_BROWSER
+        value: "true"
+
+      # Persistent storage path (upgrade to Render Disk for persistence)
+      - key: STORAGE_PATH
+        value: "/app/storage/resumes"
+
+      - key: AGENT_LOG_PATH
+        value: "/app/logs/agents.log"
+
+      # Streamlit talks to FastAPI on localhost inside the same container
+      - key: BACKEND_API_URL
+        value: "http://localhost:8000"
+
+      # Optional: email summary (set these manually in the Render dashboard)
+      # - key: EMAIL_ENABLED
+      #   value: "true"
+      # - key: SMTP_SERVER
+      #   value: "smtp.gmail.com"
+      # - key: EMAIL_ADDRESS
+      #   value: "you@gmail.com"
+      # - key: EMAIL_PASSWORD
+      #   value: "your-app-password"
+
+databases:
+  - name: devapply-db
+    plan: free
+    # Free plan: 1 GB storage, 97-day expiry (upgrade for production use)
