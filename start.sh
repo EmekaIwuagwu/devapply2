@@ -8,6 +8,10 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 echo "=== DevApply starting ==="
+
+# Ensure all `from app.*` imports resolve regardless of how Python was invoked
+export PYTHONPATH=/app
+
 echo "DATABASE_URL driver: $(echo "${DATABASE_URL}" | cut -d: -f1)"
 
 # ── Database initialisation (non-fatal) ───────────────────────────────────────
