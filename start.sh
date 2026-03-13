@@ -12,7 +12,8 @@ echo "=== DevApply starting ==="
 # Ensure all `from app.*` imports resolve regardless of how Python was invoked
 export PYTHONPATH=/app
 
-echo "DATABASE_URL driver: $(echo "${DATABASE_URL}" | cut -d: -f1)"
+echo "DATABASE_URL driver : $(echo "${DATABASE_URL:-NOT SET — using SQLite default}" | cut -d: -f1)"
+echo "JWT_SECRET_KEY set  : $([ -n "${JWT_SECRET_KEY}" ] && echo yes || echo no)"
 
 # ── Database initialisation (non-fatal) ───────────────────────────────────────
 echo "Initialising database tables..."
