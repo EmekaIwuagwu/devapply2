@@ -13,6 +13,8 @@ FROM python:3.11-slim
 # Prevents Python from writing .pyc files and buffers stdout/stderr
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    # Ensure `from app.*` imports resolve when running from /app
+    PYTHONPATH=/app \
     # Store Playwright browsers inside the image (not in $HOME/.cache)
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
