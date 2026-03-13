@@ -37,6 +37,29 @@ except Exception as e:
     sys.exit(1)
 PYEOF
 
+# ── Seed admin user (non-fatal, skips if already exists) ─────────────────────
+echo "Seeding admin user..."
+python - <<'PYEOF' || echo "Admin seed skipped"
+import asyncio, sys, os
+async def seed():
+    from app.backend.database.connection import AsyncSessionLocal
+    from app.backend.services.user_service import create_user, get_user_by_email
+    from app.backend.schemas.user import UserCreate
+    email = os.getenv("ADMIN_EMAIL", "admin@example.com")
+    password = os.getenv("ADMIN_PASSWORD", "password")
+    async with AsyncSessionLocal() as db:
+        existing = await get_user_by_email(db, email)
+        if existing:
+            print(f"Admin user already exists: {email}")
+            return
+        user = await create_user(db, UserCreate(
+            email=email, password=password,
+            first_name="Admin", last_name="User"
+        ))
+        print(f"Admin user created: {user.email}")
+asyncio.run(seed())
+PYEOF
+
 # ── FastAPI backend — background with auto-restart ────────────────────────────
 # Runs on internal port 8000. Restarts automatically if it crashes.
 # Render does NOT monitor this port — Streamlit ($PORT) is the health target.
