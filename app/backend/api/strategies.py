@@ -75,6 +75,6 @@ async def activate_strategy(
     # deactivate others first
     strategies = await strategy_service.get_strategies(db, current_user.id)
     for s in strategies:
-        s.is_active = s.id == strategy_id
+        s.is_active = s.id == str(strategy_id)
     await db.commit()
     return {"message": f"Strategy {strategy_id} activated"}
