@@ -1,63 +1,62 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────────────────────
 # DevApply startup script
-# Launches FastAPI (port 8000) and Streamlit ($PORT) in the same container.
+#
+# Architecture on Render (single web service):
+#   • FastAPI   → internal :8000  (background, auto-restarts on crash)
+#   • Streamlit → $PORT           (foreground — this is what Render monitors)
 # ─────────────────────────────────────────────────────────────────────────────
-set -e
 
 echo "=== DevApply starting ==="
+echo "DATABASE_URL driver: $(echo "${DATABASE_URL}" | cut -d: -f1)"
 
-# ── Database initialisation ────────────────────────────────────────────────
-# Create all tables if they don't exist yet (idempotent).
-echo "Initialising database..."
-python - <<'PYEOF'
+# ── Database initialisation (non-fatal) ───────────────────────────────────────
+echo "Initialising database tables..."
+python - <<'PYEOF' || echo "DB init skipped (will retry on first request)"
 import asyncio, sys
 try:
     from app.backend.database.connection import engine, Base
-    # Import all models so Base.metadata knows about them
-    from app.backend.models import (  # noqa: F401
-        user, strategy, application, resume, agent_execution
-    )
+    # Import all models so Base.metadata is fully populated
+    import app.backend.models.user        # noqa: F401
+    import app.backend.models.strategy    # noqa: F401
+    import app.backend.models.application # noqa: F401
+    import app.backend.models.resume      # noqa: F401
+    import app.backend.models.agent_execution  # noqa: F401
     async def init_db():
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
     asyncio.run(init_db())
-    print("Database ready.")
+    print("Database tables ready.")
 except Exception as e:
-    print(f"DB init warning (may already exist): {e}", file=sys.stderr)
+    print(f"DB init warning: {e}", file=sys.stderr)
+    sys.exit(1)
 PYEOF
 
-# ── FastAPI backend ────────────────────────────────────────────────────────
-echo "Starting FastAPI on :8000..."
-uvicorn app.main:app \
-    --host 0.0.0.0 \
-    --port 8000 \
-    --workers 1 \
-    --log-level info &
-BACKEND_PID=$!
+# ── FastAPI backend — background with auto-restart ────────────────────────────
+# Runs on internal port 8000. Restarts automatically if it crashes.
+# Render does NOT monitor this port — Streamlit ($PORT) is the health target.
+(
+  while true; do
+    echo "[FastAPI] starting on :8000 ..."
+    uvicorn app.main:app \
+      --host 0.0.0.0 \
+      --port 8000 \
+      --workers 1 \
+      --log-level info
+    echo "[FastAPI] exited (code $?), restarting in 5 s ..."
+    sleep 5
+  done
+) &
 
-# Give FastAPI a moment to bind before Streamlit starts hitting it
-sleep 2
+# Give FastAPI a moment to bind before Streamlit starts calling it
+sleep 3
 
-# ── Streamlit frontend ─────────────────────────────────────────────────────
-# Render sets $PORT; fall back to 8501 for local runs.
-STREAMLIT_PORT=${PORT:-8501}
-echo "Starting Streamlit on :${STREAMLIT_PORT}..."
-streamlit run app/frontend/main.py \
-    --server.port "${STREAMLIT_PORT}" \
-    --server.address 0.0.0.0 \
-    --server.headless true \
-    --browser.gatherUsageStats false \
-    --server.enableCORS false &
-FRONTEND_PID=$!
-
-echo "=== DevApply running ==="
-echo "  Backend  → http://localhost:8000"
-echo "  Frontend → http://localhost:${STREAMLIT_PORT}"
-
-# Exit if either process dies
-wait -n
-EXIT_CODE=$?
-echo "A service exited (code ${EXIT_CODE}) — shutting down."
-kill "${BACKEND_PID}" "${FRONTEND_PID}" 2>/dev/null || true
-exit "${EXIT_CODE}"
+# ── Streamlit frontend — foreground (Render monitors $PORT) ───────────────────
+STREAMLIT_PORT="${PORT:-8501}"
+echo "Starting Streamlit on :${STREAMLIT_PORT} ..."
+exec streamlit run app/frontend/main.py \
+  --server.port "${STREAMLIT_PORT}" \
+  --server.address 0.0.0.0 \
+  --server.headless true \
+  --browser.gatherUsageStats false \
+  --server.enableCORS false
