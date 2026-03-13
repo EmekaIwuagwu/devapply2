@@ -22,13 +22,13 @@ def show_resume_page():
     if uploaded_file:
         if st.button("Confirm Upload"):
             files = {"file": (uploaded_file.name, uploaded_file.getvalue())}
-            # Note: api_client needs a 'post_file' method or we use requests directly
             import requests
+            from app.frontend.utils.api_client import BACKEND_URL
 
             token = st.session_state.get("access_token")
             headers = {"Authorization": f"Bearer {token}"}
             res = requests.post(
-                "http://localhost:8000/api/resumes/", headers=headers, files=files
+                f"{BACKEND_URL}/api/resumes/", headers=headers, files=files
             )
             if res.status_code == 200:
                 st.success(f"File '{uploaded_file.name}' uploaded successfully!")
