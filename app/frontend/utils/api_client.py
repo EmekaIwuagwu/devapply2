@@ -57,19 +57,42 @@ class APIClient:
 
     def login(self, username, password):
         url = f"{self.base_url}/api/auth/login"
-        data = {"username": username, "password": password}
         try:
-            response = requests.post(url, data=data)
+            response = requests.post(url, data={"username": username, "password": password}, timeout=10)
             if response.status_code == 200:
                 token_data = response.json()
                 st.session_state.access_token = token_data["access_token"]
                 st.session_state.logged_in = True
                 st.session_state.user_email = username
                 return True
+            try:
+                detail = response.json().get("detail", "Invalid credentials.")
+            except Exception:
+                detail = "Invalid credentials."
+            st.error(str(detail))
+            return False
+        except requests.exceptions.ConnectionError:
+            st.error("Cannot reach the backend. It may still be starting — please wait and try again.")
             return False
         except requests.exceptions.RequestException as e:
-            st.error(f"Login failed: {e}")
+            st.error(f"Login error: {e}")
             return False
+
+    def register(self, email, password, first_name="", last_name=""):
+        url = f"{self.base_url}/api/auth/register"
+        try:
+            return requests.post(
+                url,
+                json={"email": email, "password": password,
+                      "first_name": first_name, "last_name": last_name},
+                timeout=10,
+            )
+        except requests.exceptions.ConnectionError:
+            st.error("Cannot reach the backend server.")
+            return None
+        except requests.exceptions.RequestException as e:
+            st.error(f"Registration error: {e}")
+            return None
 
 
 api_client = APIClient()

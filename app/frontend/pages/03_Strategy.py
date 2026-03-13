@@ -52,7 +52,7 @@ def show_strategy_page():
                 "name": name,
                 "target_job_titles": job_titles,
                 "job_types": job_types,
-                "location_preferences": location,
+                "location_preference": location,
                 "is_active": True
             }
             res = api_client.post("/api/strategies/", data=strategy_data)
