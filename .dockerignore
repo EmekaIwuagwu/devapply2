@@ -1,0 +1,43 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# ── Secrets / local config (NEVER bake into Docker image) ────────────────────
+.env
+*.env
+!.env.example
+
+# ── Local databases ───────────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+celery_broker.db
+celery_results.db
+
+# ── Dev artefacts ─────────────────────────────────────────────────────────────
+.git/
+.github/
+screenshots/
+logs/
+storage/
+*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
