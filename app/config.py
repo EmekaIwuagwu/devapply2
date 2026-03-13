@@ -12,7 +12,9 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     # Database & Caching
-    DATABASE_URL: str
+    # Falls back to SQLite so the app starts even without a PostgreSQL URL.
+    # Set DATABASE_URL in Render → Environment to use a real database.
+    DATABASE_URL: str = "sqlite+aiosqlite:///./devapply.db"
     REDIS_URL: str = "sqla+sqlite:///./celery_broker.db"
     DATABASE_ECHO: bool = False
 
@@ -21,7 +23,8 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "db+sqlite:///./celery_results.db"
 
     # JWT & Security
-    JWT_SECRET_KEY: str
+    # Set JWT_SECRET_KEY in Render → Environment with a strong random value.
+    JWT_SECRET_KEY: str = "CHANGE_ME_IN_PRODUCTION_USE_A_LONG_RANDOM_STRING"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_HOURS: int = 1
     REFRESH_TOKEN_EXPIRATION_DAYS: int = 7
