@@ -10,7 +10,7 @@ class Application(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    strategy_id = Column(UUID(as_uuid=True), ForeignKey("strategies.id"), nullable=False)
+    strategy_id = Column(UUID(as_uuid=True), ForeignKey("strategies.id"), nullable=True)
     job_title = Column(String(255), nullable=False)
     company_name = Column(String(255), nullable=False)
     platform = Column(String(50))  # LinkedIn, Indeed, Google Jobs

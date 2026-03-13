@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # Set JWT_SECRET_KEY in Render → Environment with a strong random value.
     JWT_SECRET_KEY: str = "CHANGE_ME_IN_PRODUCTION_USE_A_LONG_RANDOM_STRING"
     JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRATION_HOURS: int = 1
+    JWT_EXPIRATION_HOURS: int = 24
     REFRESH_TOKEN_EXPIRATION_DAYS: int = 7
 
     # Ollama

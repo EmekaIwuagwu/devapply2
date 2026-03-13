@@ -175,9 +175,9 @@ def show_live_status():
         # Quick actions
         st.markdown("**Quick Actions**")
         if st.button("📊 Go to Dashboard", use_container_width=True):
-            st.switch_page("app/frontend/main.py")
+            st.switch_page("main.py")
         if st.button("🎯 Edit Strategy", use_container_width=True):
-            st.switch_page("app/frontend/pages/03_Strategy.py")
+            st.switch_page("pages/03_Strategy.py")
 
     # ── Mission Progress ─────────────────────────────────────────────────────
     st.markdown("---")
