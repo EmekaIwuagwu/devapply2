@@ -45,6 +45,8 @@ pyjwt==2.8.0
 bcrypt==4.1.1
 python-dotenv==1.0.0
 fake-useragent==1.4.0
+email-validator==2.1.0
+python-multipart==0.0.6
 
 # Resume Processing
 python-docx==0.8.11
