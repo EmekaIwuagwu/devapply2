@@ -16,6 +16,19 @@ def _make_async_url(url: str) -> str:
     return url
 
 
+# Register uuid.UUID → str adapter for SQLite so that Python uuid objects
+# can be used as bind parameters in WHERE clauses without InterfaceError.
+def _register_sqlite_uuid_adapter():
+    try:
+        import sqlite3
+        import uuid
+        sqlite3.register_adapter(uuid.UUID, str)
+    except Exception:
+        pass
+
+
+_register_sqlite_uuid_adapter()
+
 # For async transactions
 engine = create_async_engine(
     _make_async_url(settings.DATABASE_URL),
@@ -31,3 +44,4 @@ Base = declarative_base()
 async def get_db():
     async with AsyncSessionLocal() as session:
         yield session
+

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, DateTime, Text, UUID, ForeignKey, JSON
+from sqlalchemy import Column, String, Integer, DateTime, Text, ForeignKey, JSON
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 import uuid
@@ -8,9 +8,9 @@ from app.backend.database.connection import Base
 class AgentExecution(Base):
     __tablename__ = "agent_executions"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    strategy_id = Column(UUID(as_uuid=True), ForeignKey("strategies.id"))
+    id = Column(String(36), primary_key=True, default=_uuid)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    strategy_id = Column(String(36), ForeignKey("strategies.id"))
     start_time = Column(DateTime(timezone=True), server_default=func.now())
     end_time = Column(DateTime(timezone=True))
     status = Column(String(50))  # Running, Completed, Failed

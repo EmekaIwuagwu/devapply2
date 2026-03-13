@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, DateTime, Text, UUID, ForeignKey, Boolean, JSON
+from sqlalchemy import Column, String, Integer, DateTime, Text, ForeignKey, Boolean, JSON
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 import uuid
@@ -8,8 +8,8 @@ from app.backend.database.connection import Base
 class Strategy(Base):
     __tablename__ = "strategies"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    id = Column(String(36), primary_key=True, default=_uuid)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
     name = Column(String(255), nullable=False)
     description = Column(Text)
     target_job_titles = Column(JSON)  # e.g., ["Python developer", "AI developer"]
