@@ -1,7 +1,6 @@
 import os
 import requests
 import streamlit as st
-from app.config import settings
 
 # Allow override via env var so the same image works for both:
 #   • same-container deploys  (localhost:8000 — default)
